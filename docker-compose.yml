@@ -1,0 +1,15 @@
+version: "3.9"
+
+services:
+  sitepix:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sitepix
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - PUSHINPAY_TOKEN=${PUSHINPAY_TOKEN}
