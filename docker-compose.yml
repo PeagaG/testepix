@@ -8,3 +8,8 @@ services:
       NODE_ENV: production
       PORT: ${PORT:-3000}
       PUSHINPAY_TOKEN: ${PUSHINPAY_TOKEN}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
