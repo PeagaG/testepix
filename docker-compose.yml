@@ -6,5 +6,5 @@ services:
     restart: always
     environment:
       NODE_ENV: production
-      # Deixe a PORT com default local; o painel vai injetar de qualquer jeito
       PORT: ${PORT:-3000}
+      PUSHINPAY_TOKEN: ${PUSHINPAY_TOKEN}
