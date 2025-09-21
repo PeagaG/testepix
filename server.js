@@ -1,3 +1,4 @@
+// server.js
 import express from "express";
 import cors from "cors";
 import path from "path";
@@ -11,36 +12,61 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 👉 Servir o build do Vite
+// Servir o build do Vite (pasta dist)
 app.use(express.static(path.join(__dirname, "dist")));
 
-// 👉 Healthcheck
+// Healthcheck para o front
 app.get("/health", (req, res) => {
-  res.json({ status: "ok" });
+  res.json({ ok: true, hasToken: Boolean(process.env.PUSHINPAY_TOKEN) });
 });
 
-// 👉 Exemplo de rota PIX (edite com suas configs da PushinPay/SyncPay)
+// Endpoint que gera PIX via PushinPay
 app.post("/pix", async (req, res) => {
   try {
-    const response = await axios.post("https://api.pushinpay.com.br/api/pix/cashIn", {
-      value: req.body.value,
-      webhook_url: "https://seusite.com/webhook",
-      split_rules: []
-    }, {
-      headers: {
-        Authorization: `Bearer ${process.env.PUSHINPAY_TOKEN}`,
-        "Content-Type": "application/json"
-      }
-    });
+    const token = process.env.PUSHINPAY_TOKEN;
+    if (!token) return res.status(500).json({ error: "Token ausente no servidor" });
 
-    res.json(response.data);
+    const { value, webhook_url, split_rules } = req.body;
+
+    const { data } = await axios.post(
+      "https://api.pushinpay.com.br/api/pix/cashIn",
+      {
+        value,                                       // em centavos (1000 = R$10,00)
+        webhook_url: webhook_url || undefined,       // opcional
+        split_rules: Array.isArray(split_rules) ? split_rules : []
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        timeout: 15000,
+      }
+    );
+
+    // Tenta padronizar campos usados no front:
+    res.json({
+      status: "ok",
+      qr_code: data?.payload || data?.qrCode || data?.emv || null,
+      qr_code_base64: data?.qrCodeBase64 || null,
+      raw: data
+    });
   } catch (error) {
-    console.error(error.response?.data || error.message);
-    res.status(500).json({ error: "Erro ao gerar PIX" });
+    const status = error.response?.status;
+    const data = error.response?.data;
+    console.error("Erro /pix:", status, data || error.message);
+    res.status(500).json({ error: "Erro ao gerar PIX", status, data });
   }
+});
+
+// SPA fallback (opcional, se tiver rotas de front)
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
+
