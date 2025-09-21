@@ -1,4 +1,11 @@
 {
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start -p ${PORT:-3000}"
+  }
+}
+{
   "name": "sitepix",
   "version": "1.0.0",
   "private": true,
