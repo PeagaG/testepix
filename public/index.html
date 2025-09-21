@@ -2,70 +2,113 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PIX</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Gerar PIX</title>
   <style>
-    :root { font-family: system-ui, Arial, sans-serif; }
-    body { margin:0; min-height:100dvh; display:grid; place-items:center; background:#0f172a; color:#e2e8f0; }
-    .wrap { width:100%; max-width:420px; padding:20px; }
-    .box  { background:#111827; border:1px solid #1f2937; border-radius:16px; padding:20px; box-shadow:0 10px 30px rgba(0,0,0,.35); }
-    .qr   { display:grid; place-items:center; background:#0b1220; border:1px dashed #334155; border-radius:12px; padding:16px; margin-bottom:14px; }
-    #qr   { width:100%; max-width:320px; background:#fff; padding:10px; border-radius:8px; image-rendering: crisp-edges; }
-    button{ width:100%; padding:12px 14px; border-radius:10px; border:1px solid #2563eb; background:#2563eb; color:#fff; font-size:16px; cursor:pointer; }
-    button:active{ transform:translateY(1px); }
-    .msg  { text-align:center; font-size:13px; color:#94a3b8; margin-bottom:10px; min-height:1.2em; }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu;max-width:720px;margin:40px auto;padding:0 16px}
+    h1{margin-bottom:4px}
+    .card{border:1px solid #ddd;border-radius:12px;padding:16px;margin:16px 0}
+    label{display:block;margin:10px 0 4px}
+    input,button,textarea{width:100%;padding:12px;border:1px solid #ccc;border-radius:8px;font-size:16px}
+    button{cursor:pointer}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .qr{display:grid;place-items:center;margin-top:12px}
+    .ok{color:#0a7a3a}
+    .err{color:#b00020;white-space:pre-wrap}
+    .actions{display:flex;gap:12px}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="box">
-      <div id="msg" class="msg">Gerando PIX…</div>
-      <div class="qr">
-        <img id="qr" alt="QR Code do PIX" />
+  <h1>Gerar PIX</h1>
+  <p class="ok">Servidor: <code id="health">checando…</code></p>
+
+  <div class="card">
+    <form id="pixForm">
+      <label>Valor (R$)</label>
+      <input id="valor" type="text" inputmode="decimal" placeholder="10,00" value="10,00" />
+      <div class="row">
+        <div>
+          <label>Webhook (opcional)</label>
+          <input id="webhook" type="url" placeholder="https://seusite.com/webhook" />
+        </div>
+        <div>
+          <label style="visibility:hidden">.</label>
+          <button type="submit">Gerar QR Code</button>
+        </div>
       </div>
-      <button id="copyBtn">Copiar código PIX</button>
-    </div>
+    </form>
   </div>
 
-  <script>
-    const msg = document.getElementById("msg");
-    const img = document.getElementById("qr");
-    const copyBtn = document.getElementById("copyBtn");
-    let copiaECola = "";
+  <div id="resultado" class="card" style="display:none">
+    <p><b>Status:</b> <span id="status"></span></p>
+    <div class="qr">
+      <img id="qrImg" alt="QR Code PIX" style="max-width:260px" />
+    </div>
+    <label style="margin-top:12px">Copia e Cola</label>
+    <textarea id="qrText" rows="5" readonly></textarea>
+    <div class="actions" style="margin-top:10px">
+      <button id="btnCopiar" type="button">Copiar</button>
+      <button id="btnNovo" type="button">Gerar outro</button>
+    </div>
+    <p id="erro" class="err" style="display:none"></p>
+  </div>
 
-    async function gerarPix() {
-      try {
-        msg.textContent = "Gerando PIX…";
-        // servidor já assume 1000 (R$10) se não mandar valor; pode mudar no server se quiser
-        const res = await fetch("/pix", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: "{}"
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error((err.message || err.error || "erro") + " (HTTP " + res.status + ")");
-        }
-        const data = await res.json();
-        copiaECola = data.qr_code || "";
-        img.src = data.qr_code_base64 || "";
-        msg.textContent = "PIX pronto";
-      } catch (e) {
-        console.error(e);
-        msg.textContent = "Falha ao gerar PIX: " + e.message;
-      }
+<script>
+  // Checagem /health
+  fetch("/health").then(r=>r.json()).then(j=>{
+    document.getElementById("health").textContent = j.ok ? "OK" : "indisponível";
+  }).catch(()=>document.getElementById("health").textContent="indisponível");
+
+  function reaisParaCentavos(txt){
+    if(!txt) return 0;
+    const n = parseFloat(
+      txt.replace(/\./g,"").replace(",",".").replace(/[^\d.]/g,"")
+    );
+    return Math.round((isNaN(n)?0:n)*100);
+  }
+
+  document.getElementById("pixForm").addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    const value = reaisParaCentavos(document.getElementById("valor").value);
+    const webhook_url = document.getElementById("webhook").value.trim() || undefined;
+
+    const $res = document.getElementById("resultado");
+    const $err = document.getElementById("erro");
+    $err.style.display="none"; $err.textContent="";
+    $res.style.display="block";
+    document.getElementById("status").textContent = "gerando…";
+    document.getElementById("qrImg").src = "";
+    document.getElementById("qrText").value = "";
+
+    try{
+      const r = await fetch("/pix", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ value, webhook_url, split_rules: [] }),
+      });
+      const j = await r.json();
+      if(!r.ok) throw new Error(typeof j === "object" ? JSON.stringify(j,null,2) : String(j));
+
+      document.getElementById("status").textContent = j.status ?? "ok";
+      if(j.qr_code_base64) document.getElementById("qrImg").src = j.qr_code_base64;
+      if(j.qr_code) document.getElementById("qrText").value = j.qr_code;
+    }catch(err){
+      document.getElementById("status").textContent = "erro";
+      $err.style.display="block";
+      $err.textContent = String(err.message || err);
     }
+  });
 
-    copyBtn.addEventListener("click", async () => {
-      if (!copiaECola) return;
-      await navigator.clipboard.writeText(copiaECola);
-      const old = copyBtn.textContent;
-      copyBtn.textContent = "✅ Copiado";
-      setTimeout(() => (copyBtn.textContent = old), 1200);
-    });
+  document.getElementById("btnCopiar").addEventListener("click", async ()=>{
+    const txt = document.getElementById("qrText").value;
+    if(!txt) return;
+    try{ await navigator.clipboard.writeText(txt); alert("Copia e cola copiado!"); }
+    catch{ alert("Não foi possível copiar automaticamente."); }
+  });
 
-    // gera automaticamente a cada F5/abertura
-    window.addEventListener("load", gerarPix);
-  </script>
+  document.getElementById("btnNovo").addEventListener("click", ()=>{
+    document.getElementById("resultado").style.display="none";
+  });
+</script>
 </body>
 </html>
