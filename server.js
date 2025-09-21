@@ -6,36 +6,32 @@ const https = require("https");
 const dns = require("dns").promises;
 const path = require("path");
 
+// 🔐 TOKEN FIXO AQUI (substitua pela sua chave real)
+const TOKEN = "47524|asw8UJplrxo7yhWp9Y6V3L9QtKaszpCDapdHG6M12e92c9bf";
+
 const HOST_API = "api.pushinpay.com.br";
 const PATH_API = "/api/pix/cashIn";
-
-const TOKEN = process.env.PUSHINPAY_TOKEN; // defina no EasyPanel (.env do app)
-if (!TOKEN) {
-  console.warn("[WARN] Variável PUSHINPAY_TOKEN não definida. Defina no painel antes de usar /pix.");
-}
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// --------- Frontend estático (public) ----------
+// Frontend estático
 const publicDir = path.join(__dirname, "public");
 app.use(express.static(publicDir));
 app.get("/", (req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));
 });
 
-// --------- Healthcheck ----------
+// Health
 app.get("/health", (req, res) => res.json({ ok: true }));
 
-// --------- Rota Pix ----------
+// PIX
 app.post("/pix", async (req, res) => {
   try {
-    if (!TOKEN) {
-      return res.status(500).json({ error: "Token não configurado no servidor (PUSHINPAY_TOKEN)." });
-    }
+    if (!TOKEN) return res.status(500).json({ error: "TOKEN ausente no servidor." });
 
-    const value = Number(req.body?.value ?? 1000); // centavos (1000 = R$ 10,00)
+    const value = Number(req.body?.value ?? 1000); // centavos
     const webhook_url = req.body?.webhook_url || "https://seu-site.com/webhook";
     const split_rules = Array.isArray(req.body?.split_rules) ? req.body.split_rules : [];
 
@@ -43,7 +39,7 @@ app.post("/pix", async (req, res) => {
       return res.status(400).json({ error: "Valor inválido. Envie 'value' em centavos (> 0)." });
     }
 
-    // Monta headers e payload
+    // Monta headers/payload
     const headers = {
       Host: HOST_API,
       Authorization: `Bearer ${TOKEN}`,
@@ -53,9 +49,7 @@ app.post("/pix", async (req, res) => {
     const payload = { value, webhook_url, split_rules };
 
     // Tenta chamar por IP com SNI; se falhar, usa hostname direto
-    let endpointUrl;
-    let httpsAgent;
-
+    let endpointUrl, httpsAgent;
     try {
       const [ip] = await dns.resolve4(HOST_API);
       endpointUrl = `https://${ip}${PATH_API}`;
@@ -71,8 +65,7 @@ app.post("/pix", async (req, res) => {
       timeout: 20000,
     });
 
-    // Resposta simplificada para o front
-    return res.json({
+    res.json({
       id: data.id,
       status: data.status,
       value: data.value,
@@ -80,17 +73,20 @@ app.post("/pix", async (req, res) => {
       qr_code_base64: data.qr_code_base64, // data URL PNG
     });
   } catch (e) {
-    if (e.response) {
-      return res.status(e.response.status || 400).json(e.response.data);
-    }
+    if (e.response) return res.status(e.response.status || 400).json(e.response.data);
     return res.status(500).json({ error: e.message || "Erro interno" });
   }
 });
 
-// --------- Inicialização ----------
-const PORT = process.env.PORT || 3000;
+// Sobe servidor (Box Node.js precisa ouvir em 0.0.0.0:3000)
+const PORT = 3000;
 const HOST = "0.0.0.0";
-
-app.listen(PORT, HOST, () => {
+const server = app.listen(PORT, HOST, () => {
   console.log(`Servidor rodando em http://${HOST}:${PORT}`);
+});
+
+// Encerra com graça em redeploys
+process.on("SIGTERM", () => {
+  console.log("SIGTERM recebido. Encerrando...");
+  server.close(() => process.exit(0));
 });
